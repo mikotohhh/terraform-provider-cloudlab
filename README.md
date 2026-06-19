@@ -96,6 +96,8 @@ output "node1_ipv4" {
 | `cloudlab_profile` | Queries an existing profile by UUID or `project,name` |
 | `cloudlab_resgroup` | Queries an existing reservation group by UUID |
 | `cloudlab_node` | Queries a specific node in a running experiment |
+| `cloudlab_availability` | Finds the earliest reservable window for a given set of node types and duration (e.g. "node X for 7 days — earliest start?") |
+| `cloudlab_all_availability` | Surveys earliest availability across **all** node types, using an external `discover_command` (geni-lib) to enumerate types then searching each |
 
 ## Notable Features
 

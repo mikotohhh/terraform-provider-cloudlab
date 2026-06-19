@@ -118,6 +118,8 @@ func (p *cloudlabProvider) DataSources(_ context.Context) []func() datasource.Da
 		NewProfileDataSource,
 		NewResgroupDataSource,
 		NewNodeDataSource,
+		NewAvailabilityDataSource,
+		NewAllAvailabilityDataSource,
 	}
 }
 
