@@ -1,0 +1,6 @@
+provider_installation {
+  dev_overrides {
+    "srmanda-cs/cloudlab" = "/Users/mikoto/terraform-provider-cloudlab"
+  }
+  direct {}
+}
