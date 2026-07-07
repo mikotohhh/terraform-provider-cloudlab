@@ -24,4 +24,5 @@ args=()
 if [ $# -ge 1 ]; then
   args+=(-var "duration_hours=$1")
 fi
-exec terraform apply -auto-approve "${args[@]}"
+# ${args[@]+...} guards empty-array expansion under set -u on macOS bash 3.2
+exec terraform apply -auto-approve ${args[@]+"${args[@]}"}
