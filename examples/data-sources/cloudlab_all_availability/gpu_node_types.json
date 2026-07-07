@@ -1,0 +1,11 @@
+[
+  {"cluster": "Utah",      "urn": "urn:publicid:IDN+utah.cloudlab.us+authority+cm",    "node_type": "c240g5",   "free": 0, "total": 219},
+  {"cluster": "Wisconsin", "urn": "urn:publicid:IDN+wisc.cloudlab.us+authority+cm",    "node_type": "c240g5",   "free": 0, "total": 32},
+  {"cluster": "Wisconsin", "urn": "urn:publicid:IDN+wisc.cloudlab.us+authority+cm",    "node_type": "c4130",    "free": 0, "total": 4},
+  {"cluster": "Wisconsin", "urn": "urn:publicid:IDN+wisc.cloudlab.us+authority+cm",    "node_type": "d7525",    "free": 0, "total": 24},
+  {"cluster": "Wisconsin", "urn": "urn:publicid:IDN+wisc.cloudlab.us+authority+cm",    "node_type": "d8545",    "free": 0, "total": 4},
+  {"cluster": "Clemson",   "urn": "urn:publicid:IDN+clemson.cloudlab.us+authority+cm", "node_type": "c4130",    "free": 0, "total": 2},
+  {"cluster": "Clemson",   "urn": "urn:publicid:IDN+clemson.cloudlab.us+authority+cm", "node_type": "ibm8335",  "free": 0, "total": 6},
+  {"cluster": "Clemson",   "urn": "urn:publicid:IDN+clemson.cloudlab.us+authority+cm", "node_type": "r7525",    "free": 0, "total": 15},
+  {"cluster": "Clemson",   "urn": "urn:publicid:IDN+clemson.cloudlab.us+authority+cm", "node_type": "nvidiagh", "free": 0, "total": 2}
+]

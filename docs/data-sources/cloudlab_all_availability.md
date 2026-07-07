@@ -43,7 +43,16 @@ reference script that means Python, `geni-lib`, an Emulab certificate, and the
 A reference implementation is provided in the repository at
 `examples/data-sources/cloudlab_all_availability/cloudlab_nodetypes.py`. Anything
 that emits the same JSON shape works (a cache file via `cat`, a different
-inventory tool, etc.).
+inventory tool, etc.). Two ready-made options ship next to it:
+
+- `run_discovery.sh` — wraps the geni-lib script, pulling the cert-key
+  passphrase from the macOS Keychain so no secret appears in the repo or the
+  Terraform configuration (see the script header for the one-time
+  `security add-generic-password` setup).
+- `gpu_node_types.json` — a curated static inventory of every GPU node type
+  (P100/V100/V100S/A30/A100/GH200 across Utah, Wisconsin and Clemson). Using it
+  via `["cat", ".../gpu_node_types.json"]` needs nothing but the API token; its
+  `free`/`total` values are placeholders, so leave `only_with_free` unset.
 
 ## Example Usage
 
