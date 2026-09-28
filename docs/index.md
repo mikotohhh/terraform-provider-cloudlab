@@ -106,3 +106,5 @@ output "node_hostnames" {
 | [cloudlab_profile](data-sources/cloudlab_profile.md) | Queries an existing profile by UUID or `project,name` |
 | [cloudlab_resgroup](data-sources/cloudlab_resgroup.md) | Queries an existing reservation group by UUID |
 | [cloudlab_node](data-sources/cloudlab_node.md) | Queries a specific node in a running experiment |
+| [cloudlab_availability](data-sources/cloudlab_availability.md) | Finds the earliest reservable window for a requested set of node types |
+| [cloudlab_all_availability](data-sources/cloudlab_all_availability.md) | Surveys per-type availability across allocatable physical nodes |

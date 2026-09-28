@@ -7,6 +7,11 @@ build:
 .PHONY: test
 test:
 	go test -v -count=1 -timeout 120s ./...
+	python3 examples/data-sources/cloudlab_all_availability/test_cloudlab_nodetypes.py
+
+.PHONY: test-race
+test-race:
+	go test -race -count=1 -timeout 120s ./...
 
 .PHONY: lint
 lint:

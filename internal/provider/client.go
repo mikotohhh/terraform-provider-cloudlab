@@ -4,13 +4,18 @@ package provider
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 const (
@@ -38,10 +43,18 @@ type Client struct {
 
 // NewClient creates a new CloudLab Portal API client.
 func NewClient(portalURL, token string) *Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 32
+	transport.MaxIdleConnsPerHost = 16
+	transport.MaxConnsPerHost = 16
+	transport.IdleConnTimeout = 90 * time.Second
 	return &Client{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		portalURL:  portalURL,
-		token:      token,
+		httpClient: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: transport,
+		},
+		portalURL: portalURL,
+		token:     token,
 	}
 }
 
@@ -363,13 +376,27 @@ func (e *APIError) Error() string {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
-// retryDelays defines the wait durations between successive retry attempts.
-// Three attempts total: initial + two retries with exponential back-off (1 s, 2 s).
-var retryDelays = []time.Duration{1 * time.Second, 2 * time.Second}
+// retryDelays defines the base wait between successive retry attempts. Random
+// jitter is added so requests that hit the Portal's transient token race do not
+// wake up together and collide again.
+var retryDelays = []time.Duration{750 * time.Millisecond, 1500 * time.Millisecond}
+
+const retryJitterMax = 500 * time.Millisecond
+
+func jitteredRetryDelay(base time.Duration) time.Duration {
+	value, err := cryptorand.Int(cryptorand.Reader, big.NewInt(int64(retryJitterMax)+1))
+	if err != nil {
+		return base
+	}
+	return base + time.Duration(value.Int64())
+}
 
 // isRetryable reports whether err warrants a retry.
-// Only two categories are retried:
+// Three categories are retried:
 //   - HTTP 429 Too Many Requests — the server explicitly asked us to back off.
+//   - HTTP 401 "No such user" — a transient race in the Portal's session
+//     layer when two requests with the same token arrive too close together;
+//     a jittered retry succeeds. Other 401s (bad token) are not retried.
 //   - net.Error (connection refused, DNS failure, transport-level timeout) — the
 //     request never reached the server, so retrying is safe regardless of method.
 func isRetryable(err error) bool {
@@ -378,13 +405,38 @@ func isRetryable(err error) bool {
 	}
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
+		if apiErr.StatusCode == http.StatusUnauthorized {
+			return strings.Contains(apiErr.Message, "No such user")
+		}
 		return apiErr.StatusCode == http.StatusTooManyRequests
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
 }
 
+// isSearchRetryable extends the generic policy for the read-only reservation
+// predictor. The Portal occasionally returns a transient 5xx while many
+// predictions overlap; retrying this endpoint is safe because it does not
+// create or modify a reservation.
+func isSearchRetryable(err error) bool {
+	if isRetryable(err) {
+		return true
+	}
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode >= http.StatusInternalServerError
+}
+
 func (c *Client) doRequest(ctx context.Context, method, path string, body any) ([]byte, error) {
+	return c.doRequestWithRetryPolicy(ctx, method, path, body, isRetryable)
+}
+
+func (c *Client) doRequestWithRetryPolicy(
+	ctx context.Context,
+	method string,
+	path string,
+	body any,
+	shouldRetry func(error) bool,
+) ([]byte, error) {
 	var bodyBytes []byte
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -397,19 +449,47 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body any) (
 	var lastErr error
 	for attempt := 0; attempt <= len(retryDelays); attempt++ {
 		if attempt > 0 {
+			delay := jitteredRetryDelay(retryDelays[attempt-1])
+			tflog.Debug(ctx, "Waiting to retry CloudLab API request", map[string]any{
+				"method":   method,
+				"path":     path,
+				"attempt":  attempt + 1,
+				"delay_ms": delay.Milliseconds(),
+			})
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(retryDelays[attempt-1]):
+			case <-time.After(delay):
 			}
 		}
 
+		tflog.Debug(ctx, "Sending CloudLab API request", map[string]any{
+			"method":  method,
+			"path":    path,
+			"attempt": attempt + 1,
+		})
+		started := time.Now()
 		respBody, err := c.doOnce(ctx, method, path, bodyBytes)
 		if err == nil {
+			tflog.Debug(ctx, "CloudLab API request completed", map[string]any{
+				"method":      method,
+				"path":        path,
+				"attempt":     attempt + 1,
+				"duration_ms": time.Since(started).Milliseconds(),
+			})
 			return respBody, nil
 		}
 		lastErr = err
-		if !isRetryable(err) {
+		retryable := shouldRetry(err)
+		tflog.Debug(ctx, "CloudLab API request failed", map[string]any{
+			"method":      method,
+			"path":        path,
+			"attempt":     attempt + 1,
+			"duration_ms": time.Since(started).Milliseconds(),
+			"retryable":   retryable,
+			"error":       err.Error(),
+		})
+		if !retryable {
 			return nil, err
 		}
 	}
@@ -455,7 +535,9 @@ func (c *Client) doOnce(ctx context.Context, method, path string, bodyBytes []by
 
 	if resp.StatusCode >= 400 {
 		apiErr := &APIError{StatusCode: resp.StatusCode}
-		if jsonErr := json.Unmarshal(respBody, apiErr); jsonErr != nil {
+		// Some Portal errors use {"error": ...}, others (e.g. the FastAPI
+		// layer) use {"detail": ...}; keep the raw body when neither parses.
+		if jsonErr := json.Unmarshal(respBody, apiErr); jsonErr != nil || apiErr.Message == "" {
 			apiErr.Message = string(respBody)
 		}
 		return nil, apiErr
@@ -942,7 +1024,7 @@ func (c *Client) DeleteResgroup(ctx context.Context, resgroupID string) error {
 // SearchResgroup searches for a free time slot for a resgroup.
 func (c *Client) SearchResgroup(ctx context.Context, req *ResgroupSearchRequest, durationHours int64) (*ResgroupSearchResult, error) {
 	path := fmt.Sprintf("/resgroups/search?duration=%d", durationHours)
-	body, err := c.doRequest(ctx, http.MethodPost, path, req)
+	body, err := c.doRequestWithRetryPolicy(ctx, http.MethodPost, path, req, isSearchRetryable)
 	if err != nil {
 		return nil, err
 	}
